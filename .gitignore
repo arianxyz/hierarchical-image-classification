@@ -1,0 +1,11 @@
+# Ignore dataset folders
+fashion_dataset/
+
+# Ignore system files
+.DS_Store
+.ipynb_checkpoints/
+
+# Ignore environment files
+.env
+venv/
+__pycache__/
