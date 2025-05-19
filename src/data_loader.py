@@ -16,9 +16,12 @@ class FashionDataset(Dataset):
         self.device = device
         self.df = df.copy()
         self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
+            transforms.RandomResizedCrop((224, 224), scale=(0.8, 1.0)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(15),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # RGB
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
 
         self.index_to_classes = {
@@ -41,6 +44,7 @@ class FashionDataset(Dataset):
             11: 'Shoulder Bags'
         }
         self.classes_to_index = {v: k for k, v in self.index_to_classes.items()}
+        self.encoded_labels = self.df["subcategory"].map(self.classes_to_index).tolist()
     
     def __len__(self):
         return len(self.df)
@@ -68,8 +72,8 @@ def main():
     from torch.utils.data import DataLoader
 
     # Load CSV and encode labels
-    project_root = Path("..").resolve()
-    CSV_PATH = os.path.join(project_root, "project/data/labels.csv")
+    project_root = Path(".").resolve()
+    CSV_PATH = os.path.join(project_root, "data/labels.csv")
     
     print(f"CSV_PATH: {CSV_PATH}")
     df = pd.read_csv(CSV_PATH)
@@ -79,8 +83,9 @@ def main():
     dataset = FashionDataset(device=device, df=df)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
 
-    idx = 111000
+    idx = 5
     image, label = dataset[idx]
+    print(len(dataset))
 
     print(f"Image shape: {image.shape}")
     print(f"Label: {label}")
