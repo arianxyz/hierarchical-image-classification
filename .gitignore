@@ -1,11 +1,25 @@
 # Ignore dataset folders
-fashion_dataset/
+data/DeepFashion2/
+data/FashionData/
 
 # Ignore system files
 .DS_Store
 .ipynb_checkpoints/
 
-# Ignore environment files
-.env
-venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*.so
+
+# Ignore logs and temporary files
+results/
+
+# Environment files
+.env
+.venv/
+env/
+venv/
+*.env
+
+# Logs
+*.log

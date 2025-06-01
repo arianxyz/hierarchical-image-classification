@@ -1,97 +1,86 @@
-from pathlib import Path
-import torch
-from PIL import Image
-from torchvision import transforms
-from torch.utils.data import Dataset
-import pandas as pd
 import os
+import sys
+from pathlib import Path
 
+from PIL import Image
+import torch
+from torchvision import transforms
 
-class FashionDataset(Dataset):
-    def __init__(
-            self, 
-            device,
-            df
-        ):
-        self.device = device
-        self.df = df.copy()
-        self.transform = transforms.Compose([
-            transforms.RandomResizedCrop((224, 224), scale=(0.8, 1.0)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(15),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+# Add project src directory to path
+sys.path.append(str((Path().resolve() / '../src').resolve()))
 
-        self.index_to_classes = {
-            # Clothing
-            0: 'long sleeve dress',
-            1: 'short sleeve dress',
-            2: 'sling dress',
-            3: 'vest dress',
-            4: 'skirt',
-            5: 'long sleeve outwear',
-            6: 'short sleeve outwear',
+from config import IMAGE_SIZE
 
-            # Shoes
-            7: 'Flats',
-            8: 'Boots',
-            9: 'High Heels',
+def prepare_hierarchical_df(df, image_dir, available_categories, group_map):
+    """
+    Filter dataframe for selected categories, assign main group label (Clothing/Shoes/Bags), 
+    and add full image path for each row. 
+    Returns a tidy DataFrame for hierarchical classification training.
+    """
+    df = df[df['articleType'].isin(available_categories)].copy()
+    df['group'] = df['articleType'].map(group_map)
+    df['image_path'] = df['id'].apply(lambda x: os.path.join(image_dir, f"{x}.jpg"))
+    df = df[['image_path', 'articleType', 'group']]
+    return df
 
-            # Bags
-            10: 'Clutches',
-            11: 'Shoulder Bags'
-        }
-        self.classes_to_index = {v: k for k, v in self.index_to_classes.items()}
-        self.encoded_labels = self.df["subcategory"].map(self.classes_to_index).tolist()
-    
-    def __len__(self):
-        return len(self.df)
+def load_images(
+    df, 
+    label_col, 
+    image_col="image_path", 
+    aug_map=None, 
+    default_aug=None, 
+    type_col="articleType"
+):
+    """
+    Loads images and labels from a DataFrame using custom augmentations.
 
-    
-    def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        image_path = row["filepath"]
-        category = row["subcategory"]
-        # group = row["group"]
+    Args:
+        df (pd.DataFrame): Input DataFrame containing image paths and labels.
+        label_col (str): Name of the column with label information.
+        image_col (str): Name of the column with image file paths.
+        aug_map (dict): Mapping from type_col values to torchvision transforms.
+        default_aug (transform): Default transform if item not in aug_map.
+        type_col (str): Column for determining which augmentation to use.
 
-        # Open and transform the image
-        image = Image.open(image_path).convert("RGB")
-        image = self.transform(image)
+    Returns:
+        images (list): List of transformed image tensors.
+        labels (list): List of labels.
+    """
+    images = []
+    labels = []
 
-        # Get encoded label
-        label = torch.tensor(self.classes_to_index[category], dtype=torch.long)
+    for _, row in df.iterrows():
+        try:
+            img = Image.open(row[image_col]).convert("RGB")
+            # Select augmentation
+            if aug_map and row[type_col] in aug_map:
+                aug = aug_map[row[type_col]]
+            elif default_aug:
+                aug = default_aug
+            else:
+                aug = transforms.ToTensor()
+            img_tensor = aug(img)
+            images.append(img_tensor)
+            labels.append(row[label_col])
+        except Exception as e:
+            print(f"Error loading {row[image_col]}: {e}")
+            continue
 
-        return image.to(self.device), label.to(self.device)
-    
+    return images, labels
 
+def resize_tensor_list(tensor_list):
+    """
+    Resizes a list of image tensors to a specified size (IMAGE_SIZE).
 
-def main():
-    import matplotlib.pyplot as plt
-    from torch.utils.data import DataLoader
+    Args:
+        tensor_list (list): List of image tensors.
 
-    # Load CSV and encode labels
-    project_root = Path(".").resolve()
-    CSV_PATH = os.path.join(project_root, "data/labels.csv")
-    
-    print(f"CSV_PATH: {CSV_PATH}")
-    df = pd.read_csv(CSV_PATH)
-    
-
-    device = torch.device("mps" if torch.cuda.is_available() else "cpu")
-    dataset = FashionDataset(device=device, df=df)
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
-
-    idx = 5
-    image, label = dataset[idx]
-    print(len(dataset))
-
-    print(f"Image shape: {image.shape}")
-    print(f"Label: {label}")
-    print(f"Label (int): {label.item()}")
-    print('index_to_classes:', len(dataset.index_to_classes))
-
-
-if __name__ == "__main__":
-    main()
+    Returns:
+        torch.Tensor: Stacked tensor of resized images.
+    """
+    resized = []
+    for img in tensor_list:
+        if img.shape[1:] != IMAGE_SIZE:
+            img = transforms.Resize(IMAGE_SIZE)(img)
+        resized.append(img)
+    return torch.stack(resized).float()
